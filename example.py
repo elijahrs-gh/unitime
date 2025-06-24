@@ -97,12 +97,8 @@ def demo_basic_usage():
         print(f"\n📝 Creating test file: {test_file}")
         with open(test_file, "w") as f:
             f.write('''#!/usr/bin/env python3
-"""
-Test file for Hackatime tracking demo
-"""
 
 def hello_hackatime():
-    """A simple function to demonstrate tracking"""
     print("Hello, Hackatime! 👋")
     return True
 
