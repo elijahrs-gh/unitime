@@ -15,6 +15,7 @@ from flask import Flask, request, jsonify
 import configparser
 
 API_BASE_URL = "https://hackatime.hackclub.com/api/v1"
+PLUGIN_NAME = "Darwin Zed unitime-wakatime/0.1.0"
 WAKATIME_CONFIG_FILE = os.path.expanduser("~/.wakatime.cfg")
 TRACKER_CONFIG_FILE = os.path.expanduser("~/.hackatime_tracker.cfg")
 DEFAULT_HEARTBEAT_INTERVAL = 30
@@ -24,7 +25,7 @@ MAX_FILE_SIZE = 2 * 1024 * 1024
 def get_operating_system():
     system = platform.system().lower()
     if system == "darwin":
-        return "darwin"
+        return "Darwin"
     elif system == "windows":
         return "windows"
     elif system == "linux":
@@ -45,13 +46,13 @@ class Heartbeat:
     cursorpos: int = None
     lines: int = None
     is_write: bool = False
-    os: str = None
-    
+    plugin: str = None 
+
     def __post_init__(self):
         if self.time is None:
             self.time = int(time.time())
-        if self.os is None:
-            self.os = get_operating_system()
+        if self.plugin is None:
+            self.plugin = f"{get_operating_system()} {PLUGIN_NAME}"
 
 class WakaTimeConfig:
     def __init__(self, wakatime_config_file: str = WAKATIME_CONFIG_FILE, tracker_config_file: str = TRACKER_CONFIG_FILE):
