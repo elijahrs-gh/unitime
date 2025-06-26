@@ -15,23 +15,82 @@ from flask import Flask, request, jsonify
 import configparser
 
 API_BASE_URL = "https://hackatime.hackclub.com/api/v1"
-PLUGIN_NAME = "Zed Darwin unitime-wakatime/0.1.0"
+PLUGIN_NAME = "unitime-wakatime"
+PLUGIN_VERSION = "0.1.0"
+EDITOR_NAME = ""
 WAKATIME_CONFIG_FILE = os.path.expanduser("~/.wakatime.cfg")
 TRACKER_CONFIG_FILE = os.path.expanduser("~/.hackatime_tracker.cfg")
 DEFAULT_HEARTBEAT_INTERVAL = 30
 ACTIVITY_TIMEOUT = 120
 MAX_FILE_SIZE = 2 * 1024 * 1024
 
-def get_operating_system():
-    system = platform.system().lower()
-    if system == "darwin":
-        return "Darwin"
-    elif system == "windows":
-        return "windows"
-    elif system == "linux":
-        return "linux"
-    else:
-        return system
+def detect_runtime_info():
+    info = {}
+    
+    info['os_name'] = platform.system().lower()
+    info['kernel_version'] = platform.release()
+    info['arch'] = platform.machine()
+    
+    try:
+        info['python_version'] = platform.python_version()
+        info['runtime'] = f"python{info['python_version']}"
+    except (AttributeError, ImportError):
+        pass
+    
+    try:
+        import subprocess
+        node_version = subprocess.check_output(['node', '--version'], stderr=subprocess.DEVNULL)
+        if node_version:
+            info['node_version'] = node_version.decode('utf-8').strip().lstrip('v')
+            info['runtime'] = f"node{info['node_version']}"
+    except (subprocess.SubprocessError, FileNotFoundError):
+        pass
+    
+    try:
+        ruby_version = subprocess.check_output(['ruby', '--version'], stderr=subprocess.DEVNULL)
+        if ruby_version:
+            version_str = ruby_version.decode('utf-8')
+            import re
+            match = re.search(r'ruby (\d+\.\d+\.\d+)', version_str)
+            if match:
+                info['ruby_version'] = match.group(1)
+                info['runtime'] = f"ruby{info['ruby_version']}"
+    except (NameError, subprocess.SubprocessError, FileNotFoundError):
+        pass
+    
+    try:
+        java_version = subprocess.check_output(['java', '-version'], stderr=subprocess.STDOUT)
+        if java_version:
+            version_str = java_version.decode('utf-8')
+            match = re.search(r'version "([^"]+)"', version_str)
+            if match:
+                info['java_version'] = match.group(1)
+                info['runtime'] = f"java{info['java_version']}"
+    except (NameError, subprocess.SubprocessError, FileNotFoundError):
+        pass
+    
+    if 'runtime' not in info and 'python_version' in info:
+        info['runtime'] = f"python{info['python_version']}"
+    elif 'runtime' not in info:
+        info['runtime'] = "unknown-runtime"
+    
+    return info
+
+def build_user_agent(editor_name="unitime"):
+    runtime_info = detect_runtime_info()
+    os_name = runtime_info.get('os_name', platform.system().lower())
+    kernel_version = runtime_info.get('kernel_version', platform.release())
+    runtime = runtime_info.get('runtime', f"python{platform.python_version()}")
+    
+    return f"wakatime/v{PLUGIN_VERSION} ({os_name}-{kernel_version}) {runtime} {editor_name}/{PLUGIN_VERSION}"
+
+def build_plugin_name(editor_name="unitime"):
+    runtime_info = detect_runtime_info()
+    os_name = runtime_info.get('os_name', platform.system().lower())
+    kernel_version = runtime_info.get('kernel_version', platform.release())
+    runtime = runtime_info.get('runtime', f"python{platform.python_version()}")
+    
+    return f"wakatime/v{PLUGIN_VERSION} ({os_name}-{kernel_version}) {runtime} {editor_name}/{PLUGIN_VERSION}"
 
 @dataclass
 class Heartbeat:
@@ -46,13 +105,13 @@ class Heartbeat:
     cursorpos: int = None
     lines: int = None
     is_write: bool = False
-    plugin: str = None 
+    plugin: str = None
 
     def __post_init__(self):
         if self.time is None:
             self.time = int(time.time())
         if self.plugin is None:
-            self.plugin = f"{PLUGIN_NAME}"
+            self.plugin = build_plugin_name("unitime")
 
 class WakaTimeConfig:
     def __init__(self, wakatime_config_file: str = WAKATIME_CONFIG_FILE, tracker_config_file: str = TRACKER_CONFIG_FILE):
@@ -63,11 +122,53 @@ class WakaTimeConfig:
         self.project = None
         self.heartbeat_interval = DEFAULT_HEARTBEAT_INTERVAL
         self.tracked_folders = []
+        self.editor_name = "unitime"
         self.load_config()
     
     def load_config(self):
         self._load_wakatime_config()
         self._load_tracker_config()
+    
+    def update_from_ui_config(self, ui_config: Dict):
+        """Update configuration from UI settings"""
+        if 'api_key' in ui_config and ui_config['api_key']:
+            self.api_key = ui_config['api_key']
+        if 'api_url' in ui_config and ui_config['api_url']:
+            self.api_url = ui_config['api_url']
+        if 'project' in ui_config and ui_config['project']:
+            self.project = ui_config['project']
+        if 'ide' in ui_config and ui_config['ide']:
+            self.editor_name = ui_config['ide'].lower()
+        if 'heartbeat_interval' in ui_config:
+            self.heartbeat_interval = ui_config['heartbeat_interval']
+    
+    def save_wakatime_config(self):
+        """Save current settings to wakatime config file"""
+        try:
+            config = configparser.ConfigParser()
+            
+            if os.path.exists(self.wakatime_config_file):
+                config.read(self.wakatime_config_file)
+            
+            if not config.has_section('settings'):
+                config.add_section('settings')
+            
+            if self.api_key:
+                config.set('settings', 'api_key', self.api_key)
+            if self.api_url:
+                config.set('settings', 'api_url', self.api_url)
+            if self.project:
+                config.set('settings', 'project', self.project)
+            if self.heartbeat_interval:
+                config.set('settings', 'heartbeat_rate_limit_seconds', str(self.heartbeat_interval))
+            
+            with open(self.wakatime_config_file, 'w') as f:
+                config.write(f)
+            print(f"Updated WakaTime config file: {self.wakatime_config_file}")
+            return True
+        except Exception as e:
+            print(f"Failed to save WakaTime config: {e}")
+            return False
     
     def _load_wakatime_config(self):
         if not os.path.exists(self.wakatime_config_file):
@@ -240,59 +341,168 @@ class FileTracker:
     def _get_file_language(self, file_path: str) -> Optional[str]:
         extension_map = {
             '.py': 'Python',
+            '.pyi': 'Python',
+            '.pyx': 'Cython',
+            '.pxd': 'Cython',
+            '.pyd': 'Python',
+            '.ipynb': 'Jupyter Notebook',
             '.js': 'JavaScript',
+            '.jsx': 'React JSX',
             '.ts': 'TypeScript',
-            '.java': 'Java',
-            '.c': 'C',
-            '.cpp': 'C++',
-            '.cc': 'C++',
-            '.cxx': 'C++',
-            '.h': 'C Header',
-            '.hpp': 'C++ Header',
-            '.cs': 'C#',
-            '.php': 'PHP',
-            '.rb': 'Ruby',
-            '.go': 'Go',
-            '.rs': 'Rust',
-            '.swift': 'Swift',
-            '.kt': 'Kotlin',
-            '.scala': 'Scala',
+            '.tsx': 'React TSX',
+            '.vue': 'Vue',
+            '.svelte': 'Svelte',
             '.html': 'HTML',
+            '.htm': 'HTML',
+            '.xhtml': 'XHTML',
             '.css': 'CSS',
             '.scss': 'SCSS',
             '.sass': 'Sass',
             '.less': 'Less',
-            '.xml': 'XML',
-            '.json': 'JSON',
-            '.yaml': 'YAML',
-            '.yml': 'YAML',
-            '.md': 'Markdown',
+            '.php': 'PHP',
+            '.wasm': 'WebAssembly',
+            '.java': 'Java',
+            '.kt': 'Kotlin',
+            '.kts': 'Kotlin Script',
+            '.scala': 'Scala',
+            '.sc': 'Scala Script',
+            '.groovy': 'Groovy',
+            '.gvy': 'Groovy',
+            '.gradle': 'Gradle',
+            '.clj': 'Clojure',
+            '.cljs': 'ClojureScript',
+            '.cs': 'C#',
+            '.vb': 'Visual Basic',
+            '.fs': 'F#',
+            '.fsx': 'F# Script',
+            '.xaml': 'XAML',
+            '.c': 'C',
+            '.cpp': 'C++',
+            '.cc': 'C++',
+            '.cxx': 'C++',
+            '.cp': 'C++',
+            '.c++': 'C++',
+            '.h': 'C Header',
+            '.hpp': 'C++ Header',
+            '.hh': 'C++ Header',
+            '.hxx': 'C++ Header',
+            '.inl': 'C++ Inline',
+            '.cu': 'CUDA',
+            '.cuh': 'CUDA Header',
+            '.rs': 'Rust',
+            '.go': 'Go',
+            '.swift': 'Swift',
+            '.d': 'D',
+            '.zig': 'Zig',
+            '.nim': 'Nim',
+            '.cr': 'Crystal',
+            '.odin': 'Odin',
+            '.rb': 'Ruby',
+            '.erb': 'ERB',
+            '.rake': 'Ruby Rake',
+            '.pl': 'Perl',
+            '.pm': 'Perl Module',
+            '.t': 'Perl Test',
+            '.lua': 'Lua',
+            '.tcl': 'Tcl',
+            '.rb': 'Ruby',
+            '.php': 'PHP',
             '.sh': 'Shell',
             '.bash': 'Bash',
             '.zsh': 'Zsh',
             '.fish': 'Fish',
+            '.ps1': 'PowerShell',
+            '.psm1': 'PowerShell Module',
+            '.psd1': 'PowerShell Data',
+            '.bat': 'Batch',
+            '.cmd': 'Batch',
+            '.json': 'JSON',
+            '.yaml': 'YAML',
+            '.yml': 'YAML',
+            '.toml': 'TOML',
+            '.ini': 'INI',
+            '.xml': 'XML',
+            '.csv': 'CSV',
+            '.tsv': 'TSV',
             '.sql': 'SQL',
+            '.graphql': 'GraphQL',
+            '.gql': 'GraphQL',
+            '.proto': 'Protocol Buffers',
+            '.avdl': 'Avro IDL',
+            '.thrift': 'Thrift',
+            '.hs': 'Haskell',
+            '.lhs': 'Literate Haskell',
+            '.ml': 'OCaml',
+            '.mli': 'OCaml Interface',
+            '.elm': 'Elm',
+            '.erl': 'Erlang',
+            '.ex': 'Elixir',
+            '.exs': 'Elixir Script',
+            '.gleam': 'Gleam',
+            '.lisp': 'Lisp',
+            '.cl': 'Common Lisp',
+            '.rkt': 'Racket',
             '.r': 'R',
+            '.jl': 'Julia',
+            '.m': 'MATLAB/Objective-C',
+            '.mm': 'Objective-C++',
+            '.f': 'Fortran',
+            '.f90': 'Fortran 90',
+            '.f95': 'Fortran 95',
+            '.f03': 'Fortran 2003',
+            '.stan': 'Stan',
+            '.dart': 'Dart',
+            '.swift': 'Swift',
+            '.kt': 'Kotlin',
+            '.java': 'Java',
             '.m': 'Objective-C',
             '.mm': 'Objective-C++',
-            '.pl': 'Perl',
-            '.lua': 'Lua',
+            '.gd': 'GDScript',
+            '.cs': 'C# (Unity)',
+            '.hlsl': 'HLSL',
+            '.glsl': 'GLSL',
+            '.shader': 'Unity Shader',
+            '.as': 'ActionScript',
+            '.md': 'Markdown',
+            '.mdx': 'MDX',
+            '.rst': 'reStructuredText',
+            '.tex': 'LaTeX',
+            '.wiki': 'Wiki',
+            '.org': 'Org Mode',
+            '.adoc': 'AsciiDoc',
             '.vim': 'Vim Script',
-            '.dart': 'Dart',
-            '.elm': 'Elm',
-            '.ex': 'Elixir',
-            '.exs': 'Elixir',
-            '.clj': 'Clojure',
-            '.hs': 'Haskell',
-            '.ml': 'OCaml',
-            '.fs': 'F#',
-            '.jl': 'Julia',
-            '.nim': 'Nim',
-            '.zig': 'Zig'
+            '.asm': 'Assembly',
+            '.s': 'Assembly',
+            '.nasm': 'NASM',
+            '.v': 'Verilog/V',
+            '.vhd': 'VHDL',
+            '.cmake': 'CMake',
+            '.make': 'Makefile',
+            '.nix': 'Nix',
+            '.awk': 'AWK',
+            '.ahk': 'AutoHotkey',
+            '.applescript': 'AppleScript',
+            '.bf': 'Brainfuck',
+            '.io': 'Io',
+            '.j': 'J',
+            '.hy': 'Hy',
         }
         
         ext = Path(file_path).suffix.lower()
-        return extension_map.get(ext)
+        language = extension_map.get(ext)
+        
+        if ext == '.m':
+            try:
+                with open(file_path, 'r', errors='ignore') as f:
+                    content = f.read(4096)
+                    if '@interface' in content or '@implementation' in content or '#import' in content:
+                        return 'Objective-C'
+                    elif 'function ' in content or '];\n' in content:
+                        return 'MATLAB'
+            except:
+                pass
+        
+        return language
     
     def _get_git_branch(self, file_path: str) -> str:
         try:
@@ -376,7 +586,8 @@ class FileTracker:
             lineno=total_lines if total_lines else 1,
             cursorpos=0,
             lines=total_lines,
-            is_write=is_write
+            is_write=is_write,
+            plugin=build_plugin_name(self.config.editor_name)
         )
         
         print(f"DEBUG: Queuing heartbeat for {file_path} (will be sent within 30 seconds)")
@@ -435,7 +646,8 @@ class FileTracker:
         
         headers = {
             'Authorization': f'Bearer {self.config.api_key}',
-            'Content-Type': 'application/json'
+            'Content-Type': 'application/json',
+            'User-Agent': build_user_agent(self.config.editor_name)
         }
         
         for heartbeat in heartbeats:
@@ -571,6 +783,7 @@ def get_config():
         'api_url': config.api_url,
         'api_key_configured': bool(config.api_key),
         'project': config.project,
+        'editor_name': config.editor_name,
         'wakatime_config_file': config.wakatime_config_file,
         'tracker_config_file': config.tracker_config_file,
         'heartbeat_interval': config.heartbeat_interval,
@@ -587,8 +800,14 @@ def update_config():
         config.api_url = data['api_url']
     if 'project' in data:
         config.project = data['project']
+    if 'ide' in data:
+        config.editor_name = data['ide'].lower()
+    if 'heartbeat_interval' in data:
+        config.heartbeat_interval = data['heartbeat_interval']
     
-    return jsonify({'message': 'Configuration updated'})
+    config.save_wakatime_config()
+    
+    return jsonify({'message': 'Configuration updated and saved'})
 
 if __name__ == '__main__':
     try:

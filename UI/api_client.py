@@ -63,6 +63,8 @@ class APIClient:
         try:
             response = self.session.post(f"{self.base_url}/api/config", json=config)
             response.raise_for_status()
+            result = response.json()
+            print(f"Config update response: {result}")
             return True
         except requests.RequestException as e:
             print(f"Error updating config: {e}")
@@ -84,3 +86,22 @@ class APIClient:
         except Exception as e:
             print(f"Error getting tracked projects: {e}")
             return []
+    
+    def get_editor_config(self) -> Optional[str]:
+        """Get the current editor configuration from the API"""
+        try:
+            config = self.get_config()
+            if config:
+                return config.get('editor_name', 'unitime')
+            return 'unitime'
+        except Exception as e:
+            print(f"Error getting editor config: {e}")
+            return 'unitime'
+    
+    def set_editor_config(self, editor_name: str) -> bool:
+        """Set the editor name in the API configuration"""
+        try:
+            return self.update_config({'ide': editor_name})
+        except Exception as e:
+            print(f"Error setting editor config: {e}")
+            return False
