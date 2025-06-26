@@ -15,7 +15,7 @@ from flask import Flask, request, jsonify
 import configparser
 
 API_BASE_URL = "https://hackatime.hackclub.com/api/v1"
-PLUGIN_NAME = "Darwin Zed unitime-wakatime/0.1.0"
+PLUGIN_NAME = "Zed Darwin unitime-wakatime/0.1.0"
 WAKATIME_CONFIG_FILE = os.path.expanduser("~/.wakatime.cfg")
 TRACKER_CONFIG_FILE = os.path.expanduser("~/.hackatime_tracker.cfg")
 DEFAULT_HEARTBEAT_INTERVAL = 30
@@ -52,7 +52,7 @@ class Heartbeat:
         if self.time is None:
             self.time = int(time.time())
         if self.plugin is None:
-            self.plugin = f"{get_operating_system()} {PLUGIN_NAME}"
+            self.plugin = f"{PLUGIN_NAME}"
 
 class WakaTimeConfig:
     def __init__(self, wakatime_config_file: str = WAKATIME_CONFIG_FILE, tracker_config_file: str = TRACKER_CONFIG_FILE):
@@ -120,15 +120,9 @@ class WakaTimeConfig:
         config = configparser.ConfigParser()
         config.add_section('tracker')
         
-        dnr_path = "~/Documents/DNR"
-        if os.path.exists(os.path.expanduser(dnr_path)):
-            config.set('tracker', 'tracked_folders', dnr_path)
-            self.tracked_folders = [os.path.expanduser(dnr_path)]
-            print(f"Added default tracked folder: {dnr_path}")
-        else:
-            config.set('tracker', 'tracked_folders', '# Add your project folders here, comma-separated')
-            config.set('tracker', '# Example:', '~/Documents/DNR, ~/Projects/MyProject')
-            self.tracked_folders = []
+        config.set('tracker', 'tracked_folders', '# Add your project folders here, comma-separated')
+        config.set('tracker', '# Example', '~/Documents/MyProject, ~/Code/AnotherProject')
+        self.tracked_folders = []
         
         try:
             with open(self.tracker_config_file, 'w') as f:
@@ -528,9 +522,9 @@ def track_directory():
     success = tracker.add_directory(path)
     
     if success:
-        return jsonify({'message': f'Successfully tracking {path}'}), 200
+        return jsonify({'success': True, 'message': f'Successfully tracking {path}'}), 200
     else:
-        return jsonify({'error': f'Failed to track {path}'}), 400
+        return jsonify({'success': False, 'error': f'Failed to track {path}'}), 400
 
 @app.route('/api/untrack', methods=['POST'])
 def untrack_directory():
@@ -542,9 +536,9 @@ def untrack_directory():
     success = tracker.remove_directory(path)
     
     if success:
-        return jsonify({'message': f'Successfully stopped tracking {path}'}), 200
+        return jsonify({'success': True, 'message': f'Successfully stopped tracking {path}'}), 200
     else:
-        return jsonify({'error': f'Directory {path} was not being tracked'}), 400
+        return jsonify({'success': False, 'error': f'Directory {path} was not being tracked'}), 400
 
 @app.route('/api/status', methods=['GET'])
 def get_status():
