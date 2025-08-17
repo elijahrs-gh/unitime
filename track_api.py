@@ -19,7 +19,7 @@ PLUGIN_NAME = "unitime-wakatime"
 PLUGIN_VERSION = "0.1.0"
 EDITOR_NAME = ""
 WAKATIME_CONFIG_FILE = os.path.expanduser("~/.wakatime.cfg")
-TRACKER_CONFIG_FILE = os.path.expanduser("~/.hackatime_tracker.cfg")
+TRACKER_CONFIG_FILE = "hackatime_tracker.cfg"
 DEFAULT_HEARTBEAT_INTERVAL = 30
 ACTIVITY_TIMEOUT = 120
 MAX_FILE_SIZE = 2 * 1024 * 1024
@@ -721,9 +721,7 @@ for folder_path in config.tracked_folders:
 
 if not config.tracked_folders:
     print("No folders configured for tracking.")
-    print(f"Edit {config.tracker_config_file} and add folders to the 'tracked_folders' setting.")
-    print("Example: tracked_folders = ~/Documents/DNR, ~/Projects/MyProject")
-
+    
 @app.route('/api/track', methods=['POST'])
 def track_directory():
     data = request.get_json()

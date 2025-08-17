@@ -7,7 +7,7 @@ from pathlib import Path
 
 
 def start_api_server():
-    api_script = Path(__file__).parent.parent / "track_api.py"
+    api_script = Path(__file__).parent / "track_api.py"
     
     if not api_script.exists():
         print(f"Error: API script not found at {api_script}")
@@ -37,7 +37,7 @@ def start_api_server():
 
 
 def start_ui():
-    ui_script = Path(__file__).parent / "launcher.py"
+    ui_script = Path(__file__).parent / "UI" / "launcher.py"
     
     if not ui_script.exists():
         print(f"Error: UI launcher not found at {ui_script}")
