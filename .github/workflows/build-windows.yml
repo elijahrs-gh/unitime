@@ -1,0 +1,119 @@
+name: Build Windows Executables
+
+# Trigger the workflow on push to main branch or when creating a release
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+  release:
+    types: [ created ]
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    
+    steps:
+    # Checkout the repository
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    # Set up Python
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+    
+    # Install dependencies
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install pyinstaller
+        # Install your project requirements if requirements.txt exists
+        if (Test-Path requirements.txt) { pip install -r requirements.txt }
+        # Common dependencies for GUI applications
+        pip install tkinter-tooltip pillow requests watchdog
+    
+    # Build the API executable
+    - name: Build Unitime API executable
+      run: |
+        pyinstaller --onefile --name "unitime-api" run_unitime.py
+    
+    # Build the GUI executable
+    - name: Build Unitime GUI executable
+      run: |
+        pyinstaller --onefile --windowed --name "unitime-gui" UI/launcher.py
+    
+    # Create a combined package
+    - name: Create release package
+      run: |
+        mkdir unitime-windows-release
+        copy dist\unitime-api.exe unitime-windows-release\
+        copy dist\unitime-gui.exe unitime-windows-release\
+        echo "# Unitime Windows Release" > unitime-windows-release\README.md
+        echo "" >> unitime-windows-release\README.md
+        echo "This package contains Windows executables for Unitime." >> unitime-windows-release\README.md
+        echo "" >> unitime-windows-release\README.md
+        echo "## Usage:" >> unitime-windows-release\README.md
+        echo "1. Run unitime-api.exe to start the API server" >> unitime-windows-release\README.md
+        echo "2. Run unitime-gui.exe to open the user interface" >> unitime-windows-release\README.md
+        echo "" >> unitime-windows-release\README.md
+        echo "Both applications need to be running for full functionality." >> unitime-windows-release\README.md
+    
+    # Upload artifacts for every build
+    - name: Upload build artifacts
+      uses: actions/upload-artifact@v3
+      with:
+        name: unitime-windows-executables
+        path: unitime-windows-release/
+    
+    # Create a zip for releases
+    - name: Create release zip
+      if: github.event_name == 'release'
+      run: |
+        Compress-Archive -Path unitime-windows-release\* -DestinationPath unitime-windows-${{ github.ref_name }}.zip
+    
+    # Upload to GitHub release if this was triggered by a release
+    - name: Upload to GitHub Release
+      if: github.event_name == 'release'
+      uses: actions/upload-release-asset@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        upload_url: ${{ github.event.release.upload_url }}
+        asset_path: ./unitime-windows-${{ github.ref_name }}.zip
+        asset_name: unitime-windows-${{ github.ref_name }}.zip
+        asset_content_type: application/zip
+
+  # Optional: Build for multiple Python versions
+  build-matrix:
+    runs-on: windows-latest
+    strategy:
+      matrix:
+        python-version: ['3.9', '3.10', '3.11']
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ matrix.python-version }}
+    
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install pyinstaller
+        if (Test-Path requirements.txt) { pip install -r requirements.txt }
+        pip install tkinter-tooltip pillow requests watchdog
+    
+    - name: Build executables
+      run: |
+        pyinstaller --onefile --name "unitime-api-py${{ matrix.python-version }}" run_unitime.py
+        pyinstaller --onefile --windowed --name "unitime-gui-py${{ matrix.python-version }}" UI/launcher.py
+    
+    - name: Upload artifacts
+      uses: actions/upload-artifact@v3
+      with:
+        name: unitime-python-${{ matrix.python-version }}
+        path: dist/
