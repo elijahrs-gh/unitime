@@ -62,7 +62,7 @@ jobs:
     
     # Upload artifacts for every build
     - name: Upload build artifacts
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: unitime-windows-executables
         path: unitime-windows-release/
@@ -76,14 +76,9 @@ jobs:
     # Upload to GitHub release if this was triggered by a release
     - name: Upload to GitHub Release
       if: github.event_name == 'release'
-      uses: actions/upload-release-asset@v1
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      uses: softprops/action-gh-release@v2
       with:
-        upload_url: ${{ github.event.release.upload_url }}
-        asset_path: ./unitime-windows-${{ github.ref_name }}.zip
-        asset_name: unitime-windows-${{ github.ref_name }}.zip
-        asset_content_type: application/zip
+        files: ./unitime-windows-${{ github.ref_name }}.zip
 
   # Optional: Build for multiple Python versions
   build-matrix:
@@ -113,7 +108,7 @@ jobs:
         pyinstaller --onefile --windowed --name "unitime-gui-py${{ matrix.python-version }}" UI/launcher.py
     
     - name: Upload artifacts
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: unitime-python-${{ matrix.python-version }}
         path: dist/
